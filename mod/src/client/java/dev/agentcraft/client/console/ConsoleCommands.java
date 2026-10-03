@@ -101,8 +101,9 @@ public final class ConsoleCommands {
 		new Command("diff", "/diff [worktree|@agent]", "review a worktree's diff"),
 		new Command("pause", "/pause @agent", "pause an agent (keeps its task)"),
 		new Command("resume", "/resume @agent", "resume a paused or stopped agent"),
-		new Command("stop", "/stop @agent", "take an agent off shift"),
-		new Command("spawn", "/spawn @agent [task]", "bring an agent on shift"),
+		new Command("stop", "/stop @agent", "park an agent: off shift, session kept"),
+		new Command("spawn", "/spawn @agent [task]", "bring a parked agent back on shift (same session)"),
+		new Command("create", "/create", "a new character joins (parked); /create @known [task] spawns them"),
 		new Command("task", "/task <id> cancel|retry|prioritize|reassign", "steer a task"),
 		new Command("repo", "/repo add <path>", "register a local git repo"),
 		new Command("repos", "/repos", "list repos"),
@@ -178,7 +179,7 @@ public final class ConsoleCommands {
 			case "answer", "a" -> parseAnswer(rest, s);
 			case "repo" -> parseRepo(rest, args);
 			case "repos" -> new Repos();
-			case "pause", "resume", "stop", "spawn" -> parseAgentAction(cmd, args, s);
+			case "pause", "resume", "stop", "spawn", "create" -> parseAgentAction(cmd, args, s);
 			case "task", "t" -> parseTask(args, s);
 			case "diff" -> parseDiff(args, s);
 			case "status", "st" -> new Status();
@@ -227,6 +228,26 @@ public final class ConsoleCommands {
 	}
 
 	private static Intent parseAgentAction(String action, List<String> args, ForemanState s) {
+		if (action.equals("create")) {
+			// /create: a brand-new character (auto name/color) joins parked (off shift);
+			// /create @name [task]: create AND bring them on shift (optionally onto a task)
+			if (args.isEmpty()) {
+				return new AgentAction(List.of("new"), "create", null);
+			}
+			String bare = args.get(0).startsWith("@") ? args.get(0).substring(1) : args.get(0);
+			// a known agent: treat as spawn; an unknown word still creates an auto-named character
+			if (s.agent(bare.toLowerCase(Locale.ROOT)) != null) {
+				if (args.size() > 1) {
+					String tid = args.get(1).startsWith("#") ? args.get(1).substring(1) : args.get(1);
+					if (s.task(tid) == null) {
+						return new Invalid("no task " + tid + taskListSuffix(s));
+					}
+					return new AgentAction(List.of(s.agent(bare.toLowerCase(Locale.ROOT)).id()), "spawn", tid);
+				}
+				return new AgentAction(List.of(s.agent(bare.toLowerCase(Locale.ROOT)).id()), "spawn", null);
+			}
+			return new AgentAction(List.of("new"), "create", null);
+		}
 		if (args.isEmpty()) {
 			return new Invalid("usage: /" + action + " @agent" + (action.equals("spawn") ? " [task]" : ""));
 		}

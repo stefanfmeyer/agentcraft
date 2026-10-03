@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { MessageBus } from './bus.js';
-import { loadCast, type CastMember } from './cast.js';
+import { loadCast, pickIdentity, type CastMember } from './cast.js';
 import type { Config } from './config.js';
 import { FOREMAN_VERSION } from './config.js';
 import { consoleLogger, type Ctx, type Logger } from './context.js';
@@ -75,7 +75,9 @@ export class Foreman {
   readonly repos: RepoManager;
   readonly notifier: Notifier;
   readonly log: Logger;
-  readonly cast: CastMember[];
+  cast: CastMember[];
+  /** dynamic characters get appended at runtime (agent.action create) */
+  private baseCast: CastMember[] = [];
   backend: Backend | undefined;
   status: ForemanStatus;
 
@@ -100,8 +102,10 @@ export class Foreman {
       opts.notifier ??
       new Notifier({ enabled: opts.config.notify, silent: opts.config.toastSilent, log: this.log, now });
     const { cast, source } = loadCast(opts.config.projectRoot);
-    this.cast = cast;
-    this.log.debug(`cast from ${source}`);
+    // dynamic characters (agent.action create) persist in the store and rejoin the cast on restart
+    const dyn = (this.store.data.dynamicCast ??= []);
+    this.cast = [...cast, ...dyn];
+    this.log.debug(`cast from ${source} (+${dyn.length} created)`);
     setUserName(opts.config.userName);
     this.status = { version: FOREMAN_VERSION, backend: opts.config.backend, auth: opts.config.backend === 'sim' ? 'ok' : 'unknown', userName: userName() };
     if (opts.config.backend === 'sim') this.status.message = 'Simulated team (sim backend)';
@@ -519,9 +523,12 @@ export class Foreman {
       case 'task.action':
         this.taskAction(msg.taskId, msg.action, msg.arg);
         return { taskId: msg.taskId };
-      case 'agent.action':
+      case 'agent.action': {
         await this.agentAction(msg.agentId, msg.action, msg.arg);
-        return { agentId: msg.agentId };
+        // create: echo the freshly picked identity so clients can address the new character
+        const created = msg.action === 'create' ? this.agents().at(-1) : undefined;
+        return { agentId: created?.id ?? msg.agentId };
+      }
       case 'diff.request': {
         try {
           const d = await this.repos.diff(msg.repoId, msg.worktree);
@@ -602,7 +609,45 @@ export class Foreman {
     this.backend?.onTaskAction(this.tasks.require(taskId), action, arg);
   }
 
-  async agentAction(agentId: string, action: 'pause' | 'resume' | 'stop' | 'spawn', arg?: string): Promise<void> {
+  async agentAction(agentId: string, action: 'pause' | 'resume' | 'stop' | 'spawn' | 'create', arg?: string): Promise<void> {
+    if (action === 'create') {
+      // a new character for a new session/chat: auto id/name/color, persisted, off shift
+      // (parked) until spawned. Identity is born here; the gateway session is born on
+      // first turn (hermes backend ensureSession).
+      const dyn = (this.store.data.dynamicCast ??= []);
+      const { name, id, color } = pickIdentity(
+        [...this.cast.map((c) => c.id), ...dyn.map((c) => c.id)],
+        dyn.length,
+      );
+      const member: CastMember = {
+        id,
+        name,
+        role: 'worker',
+        title: 'Worker',
+        color,
+        description: 'Joined for a session; parked and resumed with /spawn and /stop.',
+      };
+      dyn.push(member);
+      this.cast = [...this.cast, member];
+      const a: Agent = {
+        id,
+        name,
+        role: 'worker',
+        title: member.title,
+        color,
+        skin: 'default',
+        state: 'idle',
+        activity: 'new - off shift',
+        station: 'lounge',
+        paused: false,
+        active: false,
+      };
+      this.store.data.agents.push(a);
+      this.bus.feed('system', `${name} joined the team (off shift - /spawn @${id} to bring them in)`, { agentId: 'user' });
+      this.store.markDirty();
+      this.emit({ type: 'agent.upsert', agent: { ...a } });
+      return;
+    }
     const id = this.resolveAgentId(agentId);
     if (!id) throw new ClientError(`no agent named "${agentId}"`);
     if (action === 'pause') this.setAgent(id, { paused: true });
@@ -611,6 +656,7 @@ export class Foreman {
     if (action === 'spawn' && arg && this.agent(id)?.role === 'lead') throw new ClientError('tasks are assigned to workers, not the lead');
     if (action === 'spawn') this.setAgent(id, { active: true, paused: false });
     this.bus.feed('system', `${this.nameOf(id)}: ${action}${arg ? ` ${arg}` : ''}`, { agentId: 'user' });
+    if ((action as string) === 'create') return; // handled above; backends only know the four classic actions
     await this.backend?.onAgentAction(id, action, arg);
     // spawn @wren t3: on shift, and t3 is hers
     if (action === 'spawn' && arg) this.taskAction(arg, 'reassign', id);

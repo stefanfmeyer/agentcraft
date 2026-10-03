@@ -380,11 +380,11 @@ export const TaskActionMsg = z.object({
 });
 export const AgentActionMsg = z.object({
   ...envelope('agent.action'),
-  agentId: Id,
+  agentId: z.string().describe('agent id; ignored for create (the Foreman picks the new identity)'),
   action: z
-    .enum(['pause', 'resume', 'stop', 'spawn'])
+    .enum(['pause', 'resume', 'stop', 'spawn', 'create'])
     .describe(
-      'pause: abort the current turn, keep the task (open questions are withdrawn); resume continues it. stop: off shift (active=false) until resume/spawn: turn aborted, open questions/permission prompts withdrawn, its doing tasks go back to the board and the next worker continues from the same branch. spawn: bring an off-shift agent onto the team.',
+      'pause: abort the current turn, keep the task (open questions are withdrawn); resume continues it. stop: off shift (active=false) until resume/spawn: turn aborted, open questions/permission prompts withdrawn, its doing tasks go back to the board and the next worker continues from the same branch. spawn: bring an off-shift agent onto the team. create: a brand-new character (auto name/color, persisted, off shift) for a new session/chat; agentId is ignored (the Foreman picks the identity).',
     ),
   arg: z.string().optional().describe('spawn: optional task id to assign to the agent'),
 });
@@ -475,7 +475,7 @@ export const CLIENT_MESSAGES = {
   'user.message': { schema: UserMessageMsg, doc: 'Message an agent (console: `@name text`) or everyone.' },
   'decision.answer': { schema: DecisionAnswerMsg, doc: 'Answer an open decision. Merge decisions: option "Merge" merges, "Request changes" sends `text` back to the worker, "Reject" abandons the branch.' },
   'task.action': { schema: TaskActionMsg, doc: 'Steer a task from the Task Wall.' },
-  'agent.action': { schema: AgentActionMsg, doc: 'Pause/resume/stop an agent, or spawn (activate) an off-shift worker.' },
+  'agent.action': { schema: AgentActionMsg, doc: 'Pause/resume/stop an agent, spawn (activate) an off-shift worker, or create a brand-new character (off shift).' },
   'diff.request': { schema: DiffRequestMsg, doc: 'Ask for the structured diff of a worktree. Answered with `diff` (same requestId).' },
   'repo.add': { schema: RepoAddMsg, doc: 'Register a local git repo (console: `/repo add <path>`).' },
 } as const;

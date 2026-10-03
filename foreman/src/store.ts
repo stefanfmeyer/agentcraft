@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Agent, Decision, FeedItem, Goal, LogEntry, Repo, Task } from './protocol.js';
+import type { CastMember } from './cast.js';
 import { ensureDir, readJson, writeJsonAtomic } from './util/fsx.js';
 
 export interface BusMessage {
@@ -57,6 +58,8 @@ export interface StateData {
   sessions: Record<string, SessionRecord>;
   worktreeMeta: Record<string, WorktreeMeta>; // key: `${repoId}/${worktreeId}`
   permissionRules: Record<string, string[]>; // agentId -> rule keys always allowed
+  /** characters created at runtime (agent.action create); joined into the cast on load */
+  dynamicCast: CastMember[];
   /** opaque backend-owned state (e.g. sim progress) */
   backend: Record<string, unknown>;
 }
@@ -104,6 +107,7 @@ function emptyState(now: number): StateData {
     sessions: {},
     worktreeMeta: {},
     permissionRules: {},
+    dynamicCast: [],
     backend: {},
   };
 }

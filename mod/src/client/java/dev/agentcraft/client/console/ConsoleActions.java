@@ -214,8 +214,15 @@ public final class ConsoleActions {
 					return all.get(0).join();
 				});
 				String who = a.agentIds().size() == 1 ? ConsoleCommands.displayName(a.agentIds().get(0), s) : a.agentIds().size() + " agents";
-				track(combined, raw, restore, ack -> pastTense(a.action()) + " " + who + (a.arg() != null ? " on " + a.arg() : "") + " " + UiBits.CHECK,
-					a.action() + " " + who + "\u2026");
+				track(combined, raw, restore, ack -> {
+					if (a.action().equals("create")) {
+						// the Foreman picks the identity; the ack echoes the new agentId - show their name
+						String newId = ack.result() != null && ack.result().has("agentId") ? ack.result().get("agentId").getAsString() : null;
+						String name = newId != null && s.agent(newId) != null ? s.agent(newId).name() : newId;
+						return (name != null ? name : who) + " joined the team (parked - /spawn to bring them in) " + UiBits.CHECK;
+					}
+					return pastTense(a.action()) + " " + who + (a.arg() != null ? " on " + a.arg() : "") + " " + UiBits.CHECK;
+				}, a.action() + " " + who + "\u2026");
 			}
 			case TaskAction t -> track(Foreman.taskAction(t.taskId(), t.action(), t.arg()), raw, restore,
 				ack -> t.taskId() + " " + pastTense(t.action()) + (t.arg() != null ? " \u2192 " + t.arg() : "") + " " + UiBits.CHECK, t.action() + " "
@@ -233,6 +240,7 @@ public final class ConsoleActions {
 			case "resume" -> "resumed";
 			case "stop" -> "stopped";
 			case "spawn" -> "spawned";
+			case "create" -> "joined the team: ";
 			case "cancel" -> "cancelled";
 			case "retry" -> "retried";
 			case "prioritize" -> "prioritized";

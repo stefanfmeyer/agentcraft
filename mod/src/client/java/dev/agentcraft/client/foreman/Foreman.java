@@ -74,7 +74,7 @@ public final class Foreman {
 		return link.send(ForemanJson.msg("task.action").put("taskId", taskId).put("action", action).put("arg", arg).json());
 	}
 
-	/** {@code action}: pause | resume | stop | spawn; {@code arg}: spawn task id. */
+	/** {@code action}: pause | resume | stop | spawn | create; {@code arg}: spawn task id. */
 	public static CompletableFuture<Ack> agentAction(String agentId, String action, @Nullable String arg) {
 		return link.send(ForemanJson.msg("agent.action").put("agentId", agentId).put("action", action).put("arg", arg).json());
 	}
