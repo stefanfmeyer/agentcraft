@@ -163,6 +163,7 @@ public final class ForemanLink {
 		try {
 			http.newWebSocketBuilder()
 				.connectTimeout(Duration.ofSeconds(3))
+				.header("Authorization", "Bearer " + ForemanEnv.token())
 				.buildAsync(uri, new Listener(gen))
 				.whenComplete((socket, err) -> {
 					if (err != null) {

@@ -52,6 +52,17 @@ export interface SimConfig {
   ambient: boolean;
 }
 
+export interface HermesConfig {
+  /** base URL of the Hermes gateway API server that runs the character sessions */
+  url: string;
+  /** bearer key for the API server (required) */
+  key?: string;
+  /** per-turn turn cap */
+  maxTurns: number;
+  /** hard timeout per turn (ms) */
+  turnTimeoutMs: number;
+}
+
 export interface Config {
   backend: BackendName;
   /** the person the team works for (prompts, feed, UI); default: the OS user name */
@@ -60,7 +71,10 @@ export interface Config {
   profile: string;
   /** profile directory: <home>/<profile> */
   dataDir: string;
+  /** WebSocket bind host; non-loopback enables the remote (LAN/Tailscale) mode */
   host: string;
+  /** shared secret required by remote clients and the agentcraft tool endpoint (remote mode) */
+  token?: string;
   port: number;
   repos: string[];
   goal?: string;
@@ -81,6 +95,7 @@ export interface Config {
   signMerges: boolean;
   claude: ClaudeConfig;
   sim: SimConfig;
+  hermes: HermesConfig;
 }
 
 type Flags = Record<string, string | boolean>;
@@ -146,13 +161,18 @@ function effort(v: unknown, d: EffortLevel): EffortLevel {
   throw new Error(`unknown effort "${String(v)}" (use ${EFFORTS.join(', ')})`);
 }
 
+/** Loopback host names a local client/Foreman uses (mirrors server.ts). */
+export function isLoopbackHost(host: string): boolean {
+  return /^(127\.\d+\.\d+\.\d+|localhost|\[::1\]|::1)$/i.test(host.trim());
+}
+
 /** Every flag loadConfig reads (the `no-` prefix is stripped by parseFlags). */
 export const KNOWN_FLAGS = new Set([
   'home', 'backend', 'profile', 'user-name', 'use-claude-login', 'repo', 'workers', 'model', 'port', 'goal', 'autostart', 'reset', 'notify',
   'toast-silent', 'debug', 'quiet', 'allow-browser-origins', 'repo-poll-ms', 'merge-style', 'sign-merges',
   'lead-model', 'worker-model', 'effort', 'lead-effort', 'max-turns', 'max-turns-lead', 'max-turns-worker',
   'max-concurrent', 'ci', 'max-budget', 'resume', 'lead-review', 'speed', 'seed', 'showcase', 'auto-answer',
-  'ambient',
+  'ambient', 'host', 'token', 'hermes-url', 'hermes-key', 'hermes-turn-timeout',
 ]);
 
 /**
@@ -178,7 +198,7 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env)
   const pick = (k: string, envKey?: string): unknown => flags[k] ?? (envKey ? env[envKey] : undefined) ?? file[k];
 
   const backendRaw = String(pick('backend', 'AGENTCRAFT_BACKEND') ?? 'claude');
-  if (backendRaw !== 'sim' && backendRaw !== 'claude') throw new Error(`unknown backend "${backendRaw}" (use sim or claude)`);
+  if (backendRaw !== 'sim' && backendRaw !== 'claude' && backendRaw !== 'hermes') throw new Error(`unknown backend "${backendRaw}" (use sim, claude or hermes)`);
   const backend = backendRaw as BackendName;
   const profile = str(pick('profile', 'AGENTCRAFT_PROFILE')) ?? backend;
   if (!/^[a-zA-Z0-9_-]+$/.test(profile)) throw new Error(`bad profile name "${profile}"`);
@@ -198,13 +218,20 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env)
       : ['juniper', 'kit', 'wren'];
 
   const model = str(flags.model);
+  const fileHermes = (file.hermes ?? {}) as Record<string, unknown>;
+  const host = str(pick('host', 'AGENTCRAFT_HOST')) ?? '127.0.0.1';
+  const token = str(pick('token', 'AGENTCRAFT_TOKEN'));
+  if (!isLoopbackHost(host) && !token) {
+    throw new Error(`a non-loopback --host (${host}) requires --token (or AGENTCRAFT_TOKEN): a LAN-exposed Foreman must require a shared secret`);
+  }
   const cfg: Config = {
     backend,
     userName: (str(pick('user-name', 'AGENTCRAFT_USER_NAME')) ?? str(file.userName))?.trim().slice(0, 40) || defaultUserName(),
     home,
     profile,
     dataDir: path.join(home, profile),
-    host: '127.0.0.1',
+    host,
+    token,
     port: num(pick('port', 'AGENTCRAFT_PORT'), 7878),
     repos,
     goal: str(flags.goal),
@@ -243,6 +270,12 @@ export function loadConfig(argv: string[], env: NodeJS.ProcessEnv = process.env)
       autoAnswer: bool(flags['auto-answer'] ?? fileSim.autoAnswer, false),
       ambient: bool(flags.ambient ?? fileSim.ambient, true),
     },
+    hermes: {
+      url: (str(flags['hermes-url']) ?? str(env.AGENTCRAFT_HERMES_URL) ?? str(fileHermes.url) ?? 'http://127.0.0.1:8642').replace(/\/$/, ''),
+      key: str(flags['hermes-key']) ?? str(env.AGENTCRAFT_HERMES_KEY) ?? str(fileHermes.key),
+      maxTurns: Math.max(1, num(flags['max-turns'] ?? fileHermes.maxTurns, 90)),
+      turnTimeoutMs: Math.max(60_000, num(flags['hermes-turn-timeout'] ?? fileHermes.turnTimeoutMs, 45 * 60_000)),
+    },
   };
   if (cfg.sim.showcase) cfg.autostart = true;
   return cfg;
@@ -252,10 +285,12 @@ export const HELP = `AgentCraft Foreman ${FOREMAN_VERSION}
 
 usage: npm run start -- [options]
 
-  --backend sim|claude     agent backend (default: claude)
+  --backend sim|claude|hermes  agent backend (default: claude; hermes = NouStef gateway sessions)
   --repo <path>[,<path>]   register local git repo(s) at start (sim: defaults to a fresh sandbox/sim-demo)
   --goal "<text>"          submit a goal right away
   --port <n>               WebSocket port (default 7878, env AGENTCRAFT_PORT)
+  --host <addr>            bind host (default 127.0.0.1; non-loopback = remote mode for a game on
+                           another machine, requires --token, env AGENTCRAFT_HOST / AGENTCRAFT_TOKEN)
   --home <dir>             state root (default ~/.agentcraft, env AGENTCRAFT_HOME)
   --user-name <name>       your name, as the agents address you (default: your OS user name,
                            env AGENTCRAFT_USER_NAME, config.json "userName")
@@ -293,4 +328,10 @@ usage: npm run start -- [options]
   --ci "<cmd>"             test command run after each task (default: detected, e.g. npm test)
   --no-lead-review         skip the lead's review turn before merge decisions
   --no-resume              do not resume interrupted sessions on start
+
+ hermes backend
+  Each cast character is one persistent session of a Hermes gateway API server (e.g. NouStef).
+  auth: AGENTCRAFT_HERMES_KEY (the API server's API_SERVER_KEY bearer)
+  --hermes-url <url>       gateway API server base URL (default http://127.0.0.1:8642)
+  --hermes-turn-timeout <ms>  hard cap per character turn (default 2700000)
 `;

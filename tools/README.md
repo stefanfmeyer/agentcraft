@@ -66,6 +66,7 @@ If the game of this checkout is already running it is reused (one client per che
 | `-ForemanArgs @('--workers','kit,wren')` | | extra Foreman flags (`npm run start -- --help`) |
 | `-Notify` / `-NoNotify` | Foreman default (on for claude) | Windows toasts |
 | `-NoGame`, `-NoForeman`, `-NoWait` | | only the Foreman / only the game / don't wait for the world |
+| `-ForemanHost <ip>` | | remote Foreman on another machine (e.g. the mini PC): the game connects there, no local Foreman is started; set `AGENTCRAFT_TOKEN` if the remote Foreman runs with one |
 | `-GradleHome <dir>` | `GRADLE_USER_HOME` or `<main checkout>\.gradle-home` | |
 | `-TimeoutSec N` | 600 | how long to wait for the world |
 | `-SummaryJson <file>` | | machine-readable result (what was started or reused, pids, ports, logs) |

@@ -23,8 +23,11 @@
 #>
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [ValidateSet('sim', 'claude')][string]$Backend,
+    [ValidateSet('sim', 'claude', 'hermes')][string]$Backend,
     [string[]]$Repo,
+    # remote Foreman on another machine (e.g. the mini PC): the game client connects there
+    # instead of starting a local Foreman; needs the matching AGENTCRAFT_TOKEN
+    [string]$ForemanHost,
     [Alias('Profile')][string]$ForemanProfile,
     # -Showcase [busy|late]: a switch with an optional positional value
     [switch]$Showcase,
@@ -182,9 +185,10 @@ if ($live) {
     }
     $fmInfo = [ordered]@{ started = $false; reused = $true; ownedByLauncher = [bool]$startedByUs; pid = [int]$live.pid; port = $fmPort; backend = $live.backend; profile = $ForemanProfile; home = $AgentHome; log = $null }
     if ($own -and $startedByUs) { $fmInfo.log = $own.log }
-} elseif ($NoForeman) {
+} elseif ($NoForeman -or $ForemanHost) {
     $fmPort = $Port
-    Write-Kv 'skipped' "-NoForeman: the game will look for a Foreman on port $fmPort" 'DarkGray'
+    if ($ForemanHost) { Write-Kv 'remote' "game connects to ws://${ForemanHost}:$fmPort (set AGENTCRAFT_TOKEN if the Foreman runs with one)" 'Green' }
+    else { Write-Kv 'skipped' "-NoForeman: the game will look for a Foreman on port $fmPort" 'DarkGray' }
     $fmInfo = [ordered]@{ started = $false; reused = $false; pid = $null; port = $fmPort; profile = $ForemanProfile; home = $AgentHome }
 } else {
     $fmPort = $Port
@@ -338,6 +342,11 @@ if ($liveGame) {
         AGENTCRAFT_PROFILE  = $ForemanProfile
         AGENTCRAFT_MUTE     = $(if ($Dev) { '1' } else { '0' })
         AGENTCRAFT_FOCUS    = $(if ($Dev) { '0' } else { '1' })
+    }
+    if ($ForemanHost) {
+        # remote mode: the game connects to a Foreman on another machine; no local Foreman needed
+        $gameEnv['AGENTCRAFT_HOST'] = $ForemanHost
+        if ($env:AGENTCRAFT_TOKEN) { $gameEnv['AGENTCRAFT_TOKEN'] = $env:AGENTCRAFT_TOKEN }
     }
     # cmd.exe /s /c "<gradlew.bat> args": a .bat cannot be spawned directly; the arguments are fixed
     # (no user text), quoted per argument and passed verbatim

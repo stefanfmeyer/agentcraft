@@ -16,6 +16,8 @@ import net.minecraft.client.Minecraft;
  * AGENTCRAFT_FOCUS      0 (default) = the window opens WITHOUT taking focus; 1 = normal focus
  * AGENTCRAFT_AUTOWORLD  1 (default) = create/load the "AgentCraft HQ" world on startup; 0 = title screen
  * AGENTCRAFT_SHOTS_DIR  where dev.screenshot writes PNGs (default &lt;repo&gt;/artifacts/shots)
+ * AGENTCRAFT_HOST       Foreman host (default 127.0.0.1; remote Foreman: its LAN/Tailscale IP)
+ * AGENTCRAFT_TOKEN      shared secret for a remote Foreman (sent as the WS Authorization bearer)
  * </pre>
  */
 public final class ClientEnv {

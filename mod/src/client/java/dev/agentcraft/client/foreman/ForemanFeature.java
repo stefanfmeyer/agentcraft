@@ -32,7 +32,7 @@ public final class ForemanFeature {
 	public static void init() {
 		int port = ClientEnv.intValue("AGENTCRAFT_PORT", 7878);
 		boolean enabled = ClientEnv.flag("AGENTCRAFT_FOREMAN", true);
-		URI uri = URI.create("ws://127.0.0.1:" + port);
+		URI uri = URI.create("ws://" + ForemanEnv.host() + ":" + port);
 		String modVersion = FabricLoader.getInstance().getModContainer(AgentCraft.MOD_ID)
 			.map(c -> c.getMetadata().getVersion().getFriendlyString()).orElse("0");
 		ForemanState state = new ForemanState(new LinkStatus(enabled ? LinkStatus.Phase.WAITING_RETRY : LinkStatus.Phase.DISABLED,

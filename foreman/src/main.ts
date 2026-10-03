@@ -4,6 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ClaudeBackend } from './agents/claude/index.js';
 import { SimBackend } from './agents/sim/index.js';
+import { HermesBackend } from './agents/hermes/index.js';
+import { createToolDispatcher } from './agents/hermes/tools-server.js';
 import { DEFAULT_SIM_GOAL } from './agents/sim/scenario.js';
 import { FOREMAN_VERSION, HELP, loadConfig, type Config } from './config.js';
 import { consoleLogger } from './context.js';
@@ -61,8 +63,18 @@ export async function main(argv: string[]): Promise<void> {
   }
 
   const foreman = new Foreman({ config: cfg, logger: log });
-  const backend = cfg.backend === 'sim' ? new SimBackend(foreman, cfg.sim) : new ClaudeBackend(foreman, cfg.claude);
-  const server = new ForemanServer(foreman, { host: cfg.host, port: cfg.port, allowBrowserOrigins: cfg.allowBrowserOrigins, validateOutbound: cfg.debug, log });
+  const backend = cfg.backend === 'sim'
+    ? new SimBackend(foreman, cfg.sim)
+    : cfg.backend === 'hermes'
+      ? new HermesBackend(foreman, cfg.hermes)
+      : new ClaudeBackend(foreman, cfg.claude);
+  const server = new ForemanServer(foreman, { host: cfg.host, port: cfg.port, token: cfg.token, allowBrowserOrigins: cfg.allowBrowserOrigins, validateOutbound: cfg.debug, log });
+  if (backend instanceof HermesBackend) {
+    // the characters' coordination tools ride on the Foreman's HTTP server
+    server.toolHandler = createToolDispatcher(foreman, { hooks: backend.toolHooks });
+    backend.setEndpoint(cfg.port, cfg.token);
+    backend.setConcurrency(cfg.claude.maxConcurrent);
+  }
 
   try {
     await server.start();
