@@ -10,7 +10,8 @@
 [![Minecraft 26.3](https://img.shields.io/badge/Minecraft-26.3-8fa98b)](https://www.minecraft.net)
 [![Fabric](https://img.shields.io/badge/mod%20loader-Fabric-d97757)](https://fabricmc.net)
 [![Claude Agent SDK](https://img.shields.io/badge/agents-Claude%20Agent%20SDK-2fa3a0)](https://code.claude.com/docs/en/agent-sdk/overview)
-[![Tests](https://img.shields.io/badge/tests-482%20passing-3b2a20)](foreman/test)
+[![Hermes](https://img.shields.io/badge/agents%20also-Hermes%20gateway-9333ea)](docs/remote.md)
+[![Tests](https://img.shields.io/badge/tests-491%20passing-3b2a20)](foreman/test)
 
 <img src="docs/img/readme/hero.jpg" alt="The AgentCraft HQ at golden hour" width="100%">
 
@@ -100,6 +101,12 @@ splits work and reviews. **Juniper, Kit, Wren, Rowan and Tove** build. They walk
 real pathfinding, sit at their desks while they type, show what they are doing with small particles
 and nameplates, talk in speech bubbles, and come find you when they need a decision.
 
+**The cast is not fixed.** Need more hands, or one character per session of your own multi-session
+workflow? `/create` spawns a brand-new worker with its own name and colour, born parked (off shift).
+`/stop @x` parks a character: they leave, and their session and memory are kept. `/spawn @x`
+brings the same character back, sitting down exactly where they left off. Created characters
+survive restarts.
+
 <br>
 
 ## The studio
@@ -187,6 +194,34 @@ tools\launch.ps1 -Repo C:\path\to\your\repo      # real agents on your repo
 tools\stop.ps1                                   # stop everything launch.ps1 started
 ```
 
+<details>
+<summary><b>Split setup: game on one machine, agents on another</b></summary>
+
+<br>
+
+The Foreman (the agent orchestrator) can run headless on a Linux box while you play on Windows,
+over LAN or Tailscale. On the Linux machine (with a [Hermes](https://hermes.nousresearch.com)
+gateway as the agents' brain, so every character is one of its persistent sessions):
+
+```sh
+export AGENTCRAFT_HERMES_KEY=<gateway API key>
+export AGENTCRAFT_TOKEN=$(openssl rand -hex 16)
+tools/launch-linux.sh --remote <linux-ip> --repo /path/to/repo
+```
+
+On Windows:
+
+```powershell
+$env:AGENTCRAFT_TOKEN = "<the token from the Linux machine>"
+tools\launch.ps1 -Backend hermes -ForemanHost <linux-ip> -Repo C:\path\to\repo
+```
+
+`-ForemanHost` points the game at the remote Foreman and skips starting a local one. Merge safety
+is unchanged (nothing merges without your in-game approval, nothing is ever pushed). Full
+walkthrough: [docs/remote.md](docs/remote.md).
+
+</details>
+
 On macOS, install Java 25 with `brew install openjdk@25`, then run from the checkout
 (the script selects that JDK without changing your system Java):
 
@@ -238,7 +273,8 @@ All keys can be rebound in Options, Controls.
 | `/diff [worktree or @agent]` | Review a worktree's changes |
 | `/status` | Goal, agents, tasks, decisions and spend |
 | `/pause @x`, `/resume @x` | Pause an agent, keeping its task |
-| `/stop @x`, `/spawn @x [task]` | Take an agent off shift, or bring one on |
+| `/stop @x`, `/spawn @x [task]` | Park an agent (session kept), or bring it back on shift |
+| `/create` | A new character joins, born parked; `/create @known [task]` spawns them |
 | `/repo add <path>`, `/repos` | Register and list repos |
 | `/help` | Everything else |
 
@@ -264,11 +300,14 @@ flowchart LR
 
 - **The Foreman** (`foreman/`) runs the agents and owns all the state: tasks and their
   dependencies, messages, shared memory, decisions and worktrees. Everything is saved to disk and
-  Claude sessions resume by id, so it survives restarts and crashes.
+  sessions resume by id, so it survives restarts and crashes.
 - **The mod** (`mod/`) is the window and the controls. It draws what the Foreman knows and sends
   back what you decide. If the game closes, no work is lost.
-- **The sim backend** is a scripted team that exercises every feature with real git edits. It powers
-  the demo, the screenshot QA and development, without any API usage.
+- **Backends.** `claude` runs each agent as a Claude Agent SDK session; `hermes` runs every
+  character as one persistent session of a [Hermes](https://hermes.nousresearch.com) gateway
+  (coordination tools ride on HTTP instead of in-process MCP, so the gateway can live on another
+  machine). The `sim` backend is a scripted team that exercises every feature with real git edits:
+  it powers the demo, the screenshot QA and development, without any API usage.
 
 <details>
 <summary><b>More on the Foreman</b></summary>
@@ -276,7 +315,8 @@ flowchart LR
 <br>
 
 - **Team:** a lead (Opus by default) that plans and reviews, and up to three workers at once (Sonnet
-  by default). Pick the team with `--workers`.
+  by default). Pick the team with `--workers`. On the hermes backend the cast is dynamic: `/create`
+  adds a character, `/stop` parks it, `/spawn` brings it back with its session intact.
 - **Task graph:** tasks only start when the tasks they depend on are done, and move through todo,
   doing, review and done, with blocked on the side.
 - **CI loop:** your tests run after each task. A failure goes back to the worker once, then to review
@@ -310,18 +350,18 @@ the workers resolved, took 2 to 10 minutes each and about $6 in total. The sim b
 
 | Path | What lives there |
 |---|---|
-| [`foreman/`](foreman) | The orchestrator: agents, task graph, memory, decisions, git safety, 482 tests |
+| [`foreman/`](foreman) | The orchestrator: agents, task graph, memory, decisions, git safety, 491 tests |
 | [`mod/`](mod) | The Fabric mod: HQ builder, agents, displays, screens, HUD |
 | [`assets-src/`](assets-src) | Scripts that generate every skin, block texture and UI sprite |
-| [`tools/`](tools) | Launcher, stop script, DevBridge CLI, screenshot and QA runner |
-| [`docs/`](docs) | Protocol reference, QA guide, design notes |
+| [`tools/`](tools) | Launchers (Windows, macOS, headless Linux), stop scripts, DevBridge CLI, QA runner |
+| [`docs/`](docs) | Protocol reference, remote setup, QA guide, design notes |
 
 <br>
 
 ## Development
 
 ```powershell
-cd foreman; npm test                       # 482 tests
+cd foreman; npm test                       # 491 tests
 cd mod; .\gradlew.bat build                # the mod
 node tools/qa.mjs --home .agentcraft-home  # capture the 10 shot QA gallery
 ```
@@ -336,10 +376,13 @@ screenshot suite.
 
 ## Status
 
-AgentCraft is young and has been used by one person on one machine. Today it is:
+AgentCraft is young and has been used by one person. Today it is:
 
-- **Windows and macOS development launchers.** Both platforms have desktop notifications when
-  the agents need a decision. macOS has been tested on Apple Silicon; Intel Macs are not yet tested.
+- **Windows and macOS development launchers, plus a headless Linux launcher.** Desktop
+  notifications when the agents need a decision. The Linux launcher runs the Foreman without a
+  game, so the studio can live on a server while you play from Windows or macOS
+  ([docs/remote.md](docs/remote.md)). macOS has been tested on Apple Silicon; Intel Macs are not
+  yet tested.
 - **Singleplayer,** one studio per world, on **Minecraft 26.3**.
 - **Run through the development client** (`gradlew runClient`). A regular mod release for normal
   launchers is planned.
